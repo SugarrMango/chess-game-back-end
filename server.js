@@ -15,7 +15,6 @@ const io = new Server(server, {
   },
 });
 
-let board;
 let clients = [];
 let rooms = {};
 
@@ -72,24 +71,48 @@ io.on("connection", (socket) => {
   clients.push(socket);
   socket.emit("message", "Welcome, to my server");
   let room_id;
+  let color;
 
   // every time we recieve event "join"
   // same as joinFunction(), every time we recieve event "join" -> call function joinFunction(id)
-  socket.on("join", (id) => {
-    if (rooms[id] !== undefined) {
-      rooms[id].saveClient(socket);
-      room_id = id;
+  socket.on("join", (data) => {
+    if (rooms[data.id] !== undefined) {
+      rooms[data.id].saveClient(socket);
+      room_id = data.id;
+
+      console.log("color: ", color);
       socket.emit("board", rooms[room_id].board);
+
+      //starting value;    condition;                  what to do on each step, i++ is the same as i+=1
+      for (let i = 0; i < rooms[data.id].colors.length; i++) {
+        if (data.color == rooms[data.id].colors[i]) {
+          color = data.color;
+          rooms[data.id].colors = rooms[data.id].colors.filter(
+            (element, index) => index !== i
+          );
+          break;
+        }
+      }
+
+      socket.emit("color", color);
     }
   });
+
+  socket.on("getColor", () => {
+    console.log("Your color is:", color);
+  });
+
   // id is already lost, but room_id exists
 
   socket.on("message", (msg) => {
     console.log("Received message", msg);
   });
 
-  socket.on("disconect", () => {
+  socket.on("disconnect", () => {
     console.log("A client disconnected");
+    if (rooms[room_id] && color) {
+      rooms[room_id].colors.push(color);
+    }
   });
 
   socket.on("move", (recieveBoard) => {
