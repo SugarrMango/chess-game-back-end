@@ -3,6 +3,11 @@ const http = require("http");
 const cors = require("cors");
 const { Server } = require("socket.io");
 const { v4: uuidv4 } = require("uuid");
+const mongoose = require("mongoose");
+const connectionDB = require("./db");
+const RoomData = require("./models/rooms");
+require("dotenv").config();
+// process.env.MONGO_URI
 
 const app = express();
 app.use(cors());
@@ -13,6 +18,17 @@ const io = new Server(server, {
     origin: "*",
     methods: ["GET", "POST"],
   },
+});
+
+connectionDB(process.env.MONGO_URI).then(() => {
+  RoomData.find({})
+    .exec()
+    .then((room_data) => {
+      for (let i in room_data) {
+        const room = new Room(room_data[i].roomId, room_data[i].board);
+        rooms[room_data[i].roomId] = room;
+      }
+    });
 });
 
 let clients = [];
@@ -28,12 +44,11 @@ let rooms = {};
 }*/
 
 class Room {
-  constructor(roomId) {
+  constructor(roomId, board = null) {
     this.roomId = roomId;
-    this.board = null;
+    this.board = board;
     this.clients = [];
     this.colors = ["black", "white"];
-    this.playerColors = {};
   }
 
   saveBoard(board) {
@@ -48,6 +63,29 @@ class Room {
     this.clients.forEach((client) => {
       client.emit("move", this.board);
     });
+  }
+
+  saveToDB() {
+    // fill with data from Room class
+    const newRoom = new RoomData({
+      board: this.board,
+      roomId: this.roomId,
+    });
+
+    newRoom.save();
+  }
+
+  updateToDB() {
+    // Update - Delete + Create
+    try {
+      RoomData.findOneAndUpdate(
+        { roomId: this.roomId }, // condition
+        { board: this.board }, // what to update
+        { upsert: true } // options
+      ).exec();
+    } catch (err) {
+      console.log(err);
+    }
   }
 }
 
@@ -64,6 +102,7 @@ app.post("/create-room", (req, res) => {
   res.status(201).json({
     id: id,
   });
+  rooms[id].saveToDB();
 });
 
 io.on("connection", (socket) => {
@@ -121,6 +160,7 @@ io.on("connection", (socket) => {
     // }
     if (rooms[room_id]) {
       rooms[room_id].board = recieveBoard;
+      rooms[room_id].updateToDB();
 
       rooms[room_id].clients.forEach((client) => {
         if (client !== socket) client.emit("move", recieveBoard);
